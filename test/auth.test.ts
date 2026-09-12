@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   ClaudeCredentialStore,
+  isUnavailableCredential,
   parseClaudeAiOauth,
   refreshViaOAuth,
   writeBackCredentials,
@@ -116,7 +117,10 @@ describe('ClaudeCredentialStore', () => {
     writeCreds(path, { claudeAiOauth: { accessToken: 'fresh', refreshToken: 'r', expiresAt: FUTURE } })
     const store = new ClaudeCredentialStore(path)
     const resolved = await store.resolve()
-    expect(resolved.accessToken).toBe('fresh')
+    expect(isUnavailableCredential(resolved)).toBe(false)
+    if (!isUnavailableCredential(resolved)) {
+      expect(resolved.accessToken).toBe('fresh')
+    }
   })
 
   test('refreshes an expired token via fetch', async () => {
@@ -131,7 +135,10 @@ describe('ClaudeCredentialStore', () => {
     try {
       const store = new ClaudeCredentialStore(path)
       const resolved = await store.resolve()
-      expect(resolved.accessToken).toBe('rotated')
+      expect(isUnavailableCredential(resolved)).toBe(false)
+      if (!isUnavailableCredential(resolved)) {
+        expect(resolved.accessToken).toBe('rotated')
+      }
       const doc = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
       expect((doc.claudeAiOauth as Record<string, unknown>).accessToken).toBe('rotated')
     } finally {
@@ -139,11 +146,24 @@ describe('ClaudeCredentialStore', () => {
     }
   })
 
-  test('fails with a diagnostic when no credentials exist', async () => {
+  test('returns an unavailable marker (not a throw) when no credentials exist', async () => {
     const store = new ClaudeCredentialStore(path)
-    const error = await store.resolve().catch(err => err)
-    expect(error).toBeInstanceOf(Error)
-    expect((error as Error).message).toMatch(/credentials|claude/i)
+    const resolved = await store.resolve()
+    expect(isUnavailableCredential(resolved)).toBe(true)
+    if (isUnavailableCredential(resolved)) {
+      expect(resolved.reason).toMatch(/no Claude Code credentials file/)
+      expect(resolved.reason).toMatch(/run `claude` once to authenticate/)
+    }
+  })
+
+  test('returns an unavailable marker when the file exists but has no OAuth entry', async () => {
+    writeCreds(path, { someOtherProvider: { accessToken: 'x' } })
+    const store = new ClaudeCredentialStore(path)
+    const resolved = await store.resolve()
+    expect(isUnavailableCredential(resolved)).toBe(true)
+    if (isUnavailableCredential(resolved)) {
+      expect(resolved.reason).toMatch(/no Claude Code OAuth entry/)
+    }
   })
 
   test('fails terminally when the refresh token itself is expired', async () => {
@@ -152,5 +172,14 @@ describe('ClaudeCredentialStore', () => {
     })
     const store = new ClaudeCredentialStore(path)
     await expect(store.resolve()).rejects.toThrow(/refresh token/i)
+  })
+
+  test('discoverModels returns an empty list (no throw) when credentials are missing', async () => {
+    // Regression: boot-time model catalog construction must not be fatal when
+    // the machine has never run `claude`. The caller falls back to the static
+    // catalog; the first real request surfaces the typed error instead.
+    const store = new ClaudeCredentialStore(path)
+    const models = await store.discoverModels()
+    expect(models).toEqual([])
   })
 })

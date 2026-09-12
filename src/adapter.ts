@@ -24,7 +24,7 @@ import {
   API_BASE_URL,
   type ClaudeConnectionOptions,
 } from './types.ts'
-import type { ResolvedCredential } from './auth.ts'
+import { isUnavailableCredential, type ResolvedCredential, type UnavailableCredential } from './auth.ts'
 
 export const PROVIDER_ID = 'claude-subscription'
 export const PROVIDER_NAME = 'Claude (Claude Code subscription)'
@@ -36,7 +36,7 @@ export const DEFAULT_REQUEST_TIMEOUT_MS = 15 * 60 * 1000
 
 export interface ClaudeSubscriptionAdapterOptions {
   resolveConnection: () => ClaudeConnectionOptions
-  resolveCredential: (signal?: AbortSignal) => Promise<ResolvedCredential>
+  resolveCredential: (signal?: AbortSignal) => Promise<ResolvedCredential | UnavailableCredential>
   resolveModels: (signal?: AbortSignal) => Promise<ClaudeCatalogModel[]>
   resolveAttachments?: () => import('./serialize.ts').AttachmentReader | undefined
   fetchImpl?: typeof fetch
@@ -113,6 +113,14 @@ export class ClaudeSubscriptionAdapter implements LlmAdapter {
   private async *dispatch(options: GenerateOptions, signal?: AbortSignal): AsyncIterable<StreamChunk> {
     const connection = this.options.resolveConnection()
     const credential = await this.options.resolveCredential(signal)
+    if (isUnavailableCredential(credential)) {
+      // No usable Claude Code credential (e.g. `claude` was never run on this
+      // machine). Fail this request with a typed, actionable error instead of
+      // letting the missing-credential condition surface as a fatal boot
+      // error. The plugin stays up and the model catalog is served from the
+      // static fallback.
+      throw new LlmError(credential.reason, 'MISSING_CREDENTIAL')
+    }
     const body = await serializeRequest(options, this.options.resolveAttachments?.())
     const excluded = this.excludedBetas.get(options.model) ?? new Set<string>()
     const betas = getModelBetas(options.model, excluded)

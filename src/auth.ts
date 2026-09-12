@@ -45,6 +45,53 @@ export interface ResolvedCredential {
   source: string
 }
 
+export interface UnavailableCredential {
+  readonly kind: 'unavailable'
+  reason: string
+}
+
+const UNAVAILABLE = 'unavailable' as const
+
+export function isUnavailableCredential(value: ResolvedCredential | UnavailableCredential): value is UnavailableCredential {
+  return typeof (value as UnavailableCredential).kind === 'string' && (value as UnavailableCredential).kind === UNAVAILABLE
+}
+
+/**
+ * Builds the "no usable Claude Code credential" marker. Used as a return value
+ * (not a thrown error) by {@link ClaudeCredentialStore.resolve} when no
+ * credential exists at all — e.g. the machine has never run `claude`. Callers
+ * decide how to surface it; boot-time model catalog construction must not
+ * treat it as fatal.
+ */
+export function unavailableCredential(path: string): UnavailableCredential {
+  return {
+    kind: UNAVAILABLE,
+    reason: `no Claude Code credentials file at ${path} — run \`claude\` once to authenticate`,
+  }
+}
+
+/**
+ * Builds the "credentials file present but no usable OAuth entry" marker,
+ * used as a return value by {@link ClaudeCredentialStore.resolve}.
+ */
+export function missingEntryCredential(path: string): UnavailableCredential {
+  return {
+    kind: UNAVAILABLE,
+    reason: `no Claude Code OAuth entry in ${path} — authenticate with a Claude subscription (\`claude\` → log in)`,
+  }
+}
+
+/**
+ * Throws when a credential is expected for an actual API request but cannot be
+ * produced. The error message is user-facing and includes how to fix it.
+ */
+export function throwUnavailable(value: ResolvedCredential | UnavailableCredential, path: string): never {
+  if (isUnavailableCredential(value)) {
+    throw new LlmError(value.reason ?? `no Claude Code credentials at ${path}`, 'MISSING_CREDENTIAL')
+  }
+  throw new LlmError(`internal error: resolve returned no credential at ${path}`, 'MISSING_CREDENTIAL')
+}
+
 function expandHome(p: string): string {
   if (p === '~') return homedir()
   if (p.startsWith('~/')) return join(homedir(), p.slice(2))
@@ -245,19 +292,19 @@ export class ClaudeCredentialStore {
     this.proactiveTimer = undefined
   }
 
-  async resolve(signal?: AbortSignal, thresholdMs = 0): Promise<ResolvedCredential> {
+  async resolve(signal?: AbortSignal, thresholdMs = 0): Promise<ResolvedCredential | UnavailableCredential> {
     const now = Date.now()
     if (this.cache !== undefined && now - this.cache.cachedAt < CACHE_TTL_MS && this.cache.expiresAt > now + thresholdMs) {
       return { accessToken: this.cache.accessToken, source: this.cache.source }
     }
     const creds = this.read()
     if (creds === null) {
-      throw new LlmError(
-        this.fileMissing()
-          ? `no Claude Code credentials file at ${this.path} — run \`claude\` once to authenticate`
-          : `no Claude Code OAuth entry in ${this.path} — authenticate with a Claude subscription (\`claude\` → log in)`,
-        'MISSING_CREDENTIAL',
-      )
+      // No credential exists at all — e.g. the machine has never run `claude`.
+      // Return an unavailable marker instead of throwing: boot-time callers
+      // (model catalog construction) must survive a missing credential file,
+      // and the adapter turns the marker back into a typed error on the first
+      // real request.
+      return this.fileMissing() ? unavailableCredential(this.path) : missingEntryCredential(this.path)
     }
     if (creds.expiresAt > now + thresholdMs) {
       this.cache = { accessToken: creds.accessToken, expiresAt: creds.expiresAt, cachedAt: now, source: `oauth(${this.path})` }
@@ -270,12 +317,9 @@ export class ClaudeCredentialStore {
     }
     const refreshed = await this.refresh(signal)
     if (refreshed.kind === 'none') {
-      throw new LlmError(
-        this.fileMissing()
-          ? `no Claude Code credentials file at ${this.path} — run \`claude\` once to authenticate`
-          : `no Claude Code OAuth entry in ${this.path} — authenticate with a Claude subscription (\`claude\` → log in)`,
-        'MISSING_CREDENTIAL',
-      )
+      // The refresh path could not produce a token (e.g. file disappeared
+      // mid-flight, or no refresh token is present). Same unavailable marker.
+      return this.fileMissing() ? unavailableCredential(this.path) : missingEntryCredential(this.path)
     }
     if (refreshed.kind === 'transient' || refreshed.kind === 'terminal') {
       const adopted = this.read()
@@ -355,6 +399,11 @@ export class ClaudeCredentialStore {
     const attempt = (async (): Promise<DiscoveredModel[]> => {
       try {
         const credential = await this.resolve(signal, 0)
+        if (isUnavailableCredential(credential)) {
+          // No credential to authenticate the discovery call with — let the
+          // caller fall back to the static catalog instead of throwing.
+          return []
+        }
         const response = await fetch(`${API_BASE_URL}/v1/models`, {
           headers: {
             authorization: `Bearer ${credential.accessToken}`,

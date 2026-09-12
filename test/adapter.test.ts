@@ -117,6 +117,23 @@ describe('ClaudeSubscriptionAdapter', () => {
     expect((error as Error).message).toBe('Overloaded')
   })
 
+  test('streams fail with a typed MISSING_CREDENTIAL error when the credential is unavailable', async () => {
+    const adapter = new ClaudeSubscriptionAdapter({
+      resolveConnection: () => CONN,
+      resolveCredential: async () => ({ kind: 'unavailable' as const, reason: 'no Claude Code credentials file at C:\\fake\\.credentials.json — run `claude` once to authenticate' }),
+      resolveModels: async () => [...DEFAULT_CATALOG],
+    })
+    let error: unknown
+    try {
+      for await (const _ of adapter.stream(makeRequest())) void _
+    } catch (err) {
+      error = err
+    }
+    expect(error).toBeInstanceOf(Error)
+    expect((error as { code?: string }).code).toBe('MISSING_CREDENTIAL')
+    expect((error as Error).message).toMatch(/no Claude Code credentials file/)
+  })
+
   test('401 maps to AUTH', async () => {
     const fetchImpl = (async () => new Response(JSON.stringify({
       error: { type: 'authentication_error', message: 'invalid x-api-key' },

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ClaudeCredentialStore, writeBackCredentials } from '../src/auth.ts'
+import { ClaudeCredentialStore, isUnavailableCredential, writeBackCredentials } from '../src/auth.ts'
 
 const FUTURE = Date.now() + 24 * 60 * 60 * 1000
 const PAST = Date.now() - 60 * 1000
@@ -49,7 +49,7 @@ describe('lock contention', () => {
       wfs(lockPath, JSON.stringify({ pid: process.pid, ts: Date.now() }))
 
       const store = new ClaudeCredentialStore(path)
-      const race = store.resolve().then(r => ({ ok: r.accessToken }))
+      const race = store.resolve().then(r => ({ ok: isUnavailableCredential(r) ? undefined : r.accessToken }))
 
       await new Promise(r => setTimeout(r, 100))
       const winner = { accessToken: 'fresh-from-winner', refreshToken: 'r1', expiresAt: Date.now() + 3600 * 1000 }
@@ -70,8 +70,14 @@ describe('lock contention', () => {
     })
     const store = new ClaudeCredentialStore(path)
     const first = await store.resolve()
-    expect(first.accessToken).toBe('cached-token')
+    expect(isUnavailableCredential(first)).toBe(false)
+    if (!isUnavailableCredential(first)) {
+      expect(first.accessToken).toBe('cached-token')
+    }
     const second = await store.resolve()
-    expect(second.accessToken).toBe('cached-token')
+    expect(isUnavailableCredential(second)).toBe(false)
+    if (!isUnavailableCredential(second)) {
+      expect(second.accessToken).toBe('cached-token')
+    }
   })
 })

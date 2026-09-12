@@ -14,10 +14,11 @@ import { DEFAULT_CATALOG } from './model-config.ts'
 import type { ClaudeConnectionOptions } from './types.ts'
 
 export { ClaudeSubscriptionAdapter } from './adapter.ts'
-export { ClaudeCredentialStore } from './auth.ts'
+export { ClaudeCredentialStore, unavailableCredential, missingEntryCredential, isUnavailableCredential } from './auth.ts'
 export { DEFAULT_CATALOG } from './model-config.ts'
 export { PROVIDER_ID, PROVIDER_NAME } from './adapter.ts'
 export type { ClaudeCatalogModel, ClaudeConnectionOptions } from './types.ts'
+export type { ResolvedCredential, UnavailableCredential } from './auth.ts'
 
 export const name = 'claude-auth'
 export const inject = ['llm'] as const
