@@ -217,14 +217,30 @@ jobs:
         name: Build
         run: bun run build
 
+      # Write the token into the runner's .npmrc. The npm CLI does NOT read
+      # NODE_AUTH_TOKEN (that env var is for other tooling) - without this the
+      # publish step dies with ENEEDAUTH. Stripping whitespace also catches the
+      # classic "token pasted with a trailing newline" secret failure fast.
+      - if: steps.token.outputs.hasToken == 'true'
+        name: Configure npm auth (.npmrc)
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          TOKEN="$(printf '%s' "$NPM_TOKEN" | tr -d '[:space:]')"
+          if [ "${#TOKEN}" -lt 20 ]; then
+            echo "::error::NPM_TOKEN secret is only ${#TOKEN} char(s) after trimming - recreate the secret with the full npm token (npm_...), no spaces or newlines."
+            exit 1
+          fi
+          printf '//registry.npmjs.org/:_authToken=%s\n' "$TOKEN" > "$HOME/.npmrc"
+          echo "Wrote ~/.npmrc auth token (${#TOKEN} chars)"
+
       # Publish the root package (npm honors the `files` field). The @djdowbnac
       # scope + MIT license -> publish publicly. Provenance is intentionally
       # omitted: it requires `id-token: write`, which this workflow's minimal
       # permission set does not grant.
       - if: steps.token.outputs.hasToken == 'true'
         name: Publish to npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           npm publish --access public

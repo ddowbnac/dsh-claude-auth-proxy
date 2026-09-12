@@ -1,12 +1,24 @@
 # To get started with Dependabot version updates, you'll need to specify which
 # package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
+# Please see the documentation for more information:
 # https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 
 version: 2
 updates:
-  # Enable version updates for npm
-  - package-ecosystem: "npm"
+  # Bun is this repo's package manager: the committed lockfile is bun.lock and
+  # CI installs with `bun install --frozen-lockfile` (no npm/pnpm lockfile).
+  # The `bun` ecosystem owns package.json + bun.lock together, so Dependabot's
+  # PRs keep the committed lockfile in sync.
+  - package-ecosystem: "bun"
     directory: "/"
     schedule:
       interval: weekly
+    labels:
+      - dependencies
+    # Dependabot's default prefixes are `build(deps)` (version updates) and
+    # `fix(deps)` (security updates). A merged `fix(deps):` commit WOULD trigger
+    # semantic-release (fix -> patch bump), which this repo must never do from
+    # dependency PRs. Pinning the prefix to `chore(deps)` preserves the same
+    # invariant the Renovate config had (:semanticCommitTypeAll(chore)).
+    commit-message:
+      prefix: "chore(deps)"
