@@ -1,0 +1,6 @@
+- insert:
+    - id: claude-auth
+      name: '@djdowbnac/dsh-claude-auth'
+      config:
+        # credentialsPath: ''
+        # disabledModels: [claude-opus-4-1]

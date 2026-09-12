@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Lint the workflow YAMLs themselves (cheap, no toolchain needed).
+  lint-workflows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # actionlint publishes no major tag (latest is v1.7.x), so pin the exact version.
+      - uses: rhysd/actionlint@v1.7.12
+
+  # Verify sources compile under the strict tsconfig (bun-types).
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4'
+      - run: bun install --frozen-lockfile
+      - run: bunx tsc --noEmit
+
+  # Full offline suite
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        bun-version: ['1.3', '1.4']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ matrix.bun-version }}
+      - run: bun install --frozen-lockfile
+      - run: bun test
+
+  # Produce the zero-runtime-dependency bundle and publish it for the surface-check job.
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4'
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: test -f lib/index.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build
+          path: lib
+
+  # scripts/smoke.mjs is live-only: it needs real Anthropic credentials and burns
+  # tokens, so it never runs in CI. Instead, verify the bundle's export surface
+  # offline across the runtimes the plugin ships to.
+  # The bundle needs no node_modules, so no install step is required here.
+  surface-check:
+    name: surface-check (${{ matrix.name }})
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Node 20
+            runtime: node
+            node-version: '20.x'
+          - name: Node 22
+            runtime: node
+            node-version: '22.x'
+          - name: Bun 1.4
+            runtime: bun
+            bun-version: '1.4'
+    steps:
+      - uses: actions/checkout@v4
+      - if: matrix.runtime == 'node'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - if: matrix.runtime == 'bun'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ matrix.bun-version }}
+      - uses: actions/download-artifact@v4
+        with:
+          # The `build` artifact holds the *contents* of lib/ at its root, so
+          # extract into lib/ to restore lib/index.js (imported by the check below).
+          name: build
+          path: lib
+      - if: matrix.runtime == 'node'
+        run: |
+          node -e 'import("./lib/index.js").then(m => {
+            if (m.name !== "claude-auth" || m.inject?.[0] !== "llm" || typeof m.apply !== "function" || m.PROVIDER_ID !== "claude-subscription") process.exit(1);
+            console.log("bundle surface ok");
+          })'
+      - if: matrix.runtime == 'bun'
+        run: |
+          bun -e 'import("./lib/index.js").then(m => {
+            if (m.name !== "claude-auth" || m.inject?.[0] !== "llm" || typeof m.apply !== "function" || m.PROVIDER_ID !== "claude-subscription") process.exit(1);
+            console.log("bundle surface ok");
+          })'

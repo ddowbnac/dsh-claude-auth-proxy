@@ -1,0 +1,215 @@
+# =============================================================================
+# Release (CD) workflow
+# -----------------------------------------------------------------------------
+# Pipeline:
+#   tag  -> verify tag == package.json version  (fail fast on mismatch)
+#        -> build (bun build -> lib/index.js)
+#        -> pack  (bun pm pack, honors `files`) -> *.tgz + SHA256SUMS.txt
+#        -> GitHub Release with the tarball + checksums (+ generated notes)
+#        -> optional npm publish (only when the NPM_TOKEN secret is set)
+#
+# Triggers:
+#   * push of a `v*` tag, OR
+#   * workflow_dispatch with an optional `tag` input. When `tag` is empty the
+#     package.json version is authoritative and the tag v<version> is created
+#     and pushed by this workflow.
+#
+# Secrets:
+#   * NPM_TOKEN (repo secret, OPTIONAL) - a token with publish rights to the
+#     `@djdowbnac` scope on npmjs.com. When absent, every step of the
+#     `publish` job is skipped (the `secrets` context is not usable in `if:`,
+#     so presence is resolved in a step and later steps gate on its output).
+#     The GitHub Release is ALWAYS produced and is the primary deliverable:
+#     consumers install from a pinned release / tarball (via
+#     `dsh plugin add <path>` or `file:` entries).
+#
+# Permissions are minimal: `contents: write` only (create the tag on dispatch +
+# upload the release assets). No `id-token`/`packages`/etc.
+# =============================================================================
+name: Release
+
+# Releases must never be cancelled mid-publish (would leave a half-uploaded
+# release asset or a half-published npm package).
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag (e.g. v0.2.0). Leave empty to use the package.json version.'
+        required: false
+        default: ''
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history so generated release notes cover all commits)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4'
+
+      - name: Install dependencies (frozen lockfile)
+        run: bun install --frozen-lockfile
+
+      # Resolve the authoritative RELEASE_TAG + VERSION and validate it equals
+      # the package.json version. Fails fast on any mismatch (catches stale
+      # versions). EVENT_* / DISPATCH_TAG come from `env:` so this block stays
+      # free of `${{ }}` interpolation (cleaner quoting, no injection surface).
+      - name: Resolve and validate release version
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_TAG: ${{ github.ref_name }}
+          DISPATCH_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+
+          if [ "$EVENT_NAME" = "push" ]; then
+            # Tag push: GITHUB_REF_NAME is the full tag, e.g. v0.2.0
+            RELEASE_TAG="$EVENT_TAG"
+            VERSION="${EVENT_TAG#v}"            # strip a leading 'v'
+          else
+            # workflow_dispatch: use the typed tag, else package.json
+            if [ -z "$DISPATCH_TAG" ]; then
+              VERSION="$PKG_VERSION"
+            else
+              VERSION="${DISPATCH_TAG#v}"       # strip a leading 'v' if present
+            fi
+            RELEASE_TAG="v$VERSION"
+          fi
+
+          # Export for later steps in this job (Ensure-tag, Pack).
+          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+          if [ "$VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Release version '$VERSION' does not match package.json version '$PKG_VERSION'. Bump package.json to the tag's version (or dispatch with the correct tag) and re-run."
+            exit 1
+          fi
+
+          echo "Resolved RELEASE_TAG=$RELEASE_TAG VERSION=$VERSION (package.json=$PKG_VERSION)"
+
+      # Dispatch path only: the tag may not exist yet (e.g. empty tag input, or
+      # a never-pushed version). Create it on the current commit and push it.
+      # Tag-push events already have the tag, so this step is skipped for them.
+      - name: Ensure the release tag exists
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          set -euo pipefail
+          if git rev-parse -q --verify "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "Tag ${RELEASE_TAG} already exists - using it"
+          else
+            git tag "${RELEASE_TAG}"
+            git push origin "${RELEASE_TAG}"
+            echo "Created and pushed tag ${RELEASE_TAG}"
+          fi
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          bun run build
+          test -f lib/index.js   # sanity: the inlined ESM bundle exists
+
+      # Pack the publishable surface (honors the `files` field) and checksum it.
+      # `bun pm pack` emits djdowbnac-dsh-claude-auth-<version>.tgz in the
+      # working dir. We pin that deterministic name so the checksum + release
+      # asset are unambiguous.
+      - name: Pack and checksum
+        run: |
+          set -euo pipefail
+          bun pm pack
+          TARBALL="djdowbnac-dsh-claude-auth-${VERSION}.tgz"
+          test -f "$TARBALL"
+          sha256sum "$TARBALL" > SHA256SUMS.txt
+          echo "Packed: $TARBALL"
+          cat SHA256SUMS.txt
+
+      # Primary deliverable: a GitHub Release with the tarball + checksums.
+      # prerelease/make_latest are derived from the tag so prereleases
+      # (versions containing '-') never clobber the `latest` pointer.
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          # `files` accepts globs; the working dir holds exactly one .tgz (the
+          # pack output). fail_on_unmatched_files guards against shipping nothing.
+          files: |
+            *.tgz
+            SHA256SUMS.txt
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          prerelease: ${{ (github.event_name == 'push' && contains(github.ref_name, '-')) || (github.event_name == 'workflow_dispatch' && contains(inputs.tag, '-')) }}
+          make_latest: ${{ ! ((github.event_name == 'push' && contains(github.ref_name, '-')) || (github.event_name == 'workflow_dispatch' && contains(inputs.tag, '-'))) }}
+        # NOTE: a dispatch with an EMPTY tag whose package.json version is a
+        # prerelease cannot be classified from the tag alone (ref_name is a
+        # branch). Pass the tag explicitly (e.g. v0.3.1-beta) to mark prerelease.
+
+  # Optional npm publish. Works without org publish rights: when the NPM_TOKEN
+  # repo secret is unset, the first step records hasToken=false and every other
+  # step is skipped (the GitHub Release still ships the package).
+  #
+  # NOTE: the `secrets` context is NOT available in `if:` (job- or step-level),
+  # so the token's presence is resolved in the first step and later steps gate
+  # on that step's output instead. Raw `npm publish` (no wrapper action) keeps
+  # the command fully controlled.
+  publish:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for NPM_TOKEN
+        id: token
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "$NPM_TOKEN" ]; then
+            echo "NPM_TOKEN present - publishing to npm"
+            echo "hasToken=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "NPM_TOKEN not set - skipping npm publish (GitHub Release already has the package)"
+            echo "hasToken=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.token.outputs.hasToken == 'true'
+        name: Checkout
+        uses: actions/checkout@v4
+
+      - if: steps.token.outputs.hasToken == 'true'
+        name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4'
+
+      - if: steps.token.outputs.hasToken == 'true'
+        name: Install dependencies (frozen lockfile)
+        run: bun install --frozen-lockfile
+
+      - if: steps.token.outputs.hasToken == 'true'
+        name: Build
+        run: bun run build
+
+      # Publish the root package (npm honors the `files` field). The @djdowbnac
+      # scope + MIT license -> publish publicly. Provenance is intentionally
+      # omitted: it requires `id-token: write`, which this workflow's minimal
+      # permission set does not grant.
+      - if: steps.token.outputs.hasToken == 'true'
+        name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          npm publish --access public

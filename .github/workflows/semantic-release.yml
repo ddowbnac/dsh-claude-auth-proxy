@@ -1,0 +1,77 @@
+# =============================================================================
+# Semantic Release (versioning + tagging) — first stage of the release pipeline
+# -----------------------------------------------------------------------------
+# On every push to main, semantic-release analyzes the new commits with the
+# conventional-commits preset and, when they are release-worthy:
+#
+#   feat:            -> minor     (0.2.0 -> 0.3.0)
+#   fix: / perf:     -> patch     (0.2.0 -> 0.2.1)
+#   BREAKING CHANGE  -> major     (0.2.0 -> 1.0.0)
+#   chore:/docs:/... -> NO release (no-op)
+#
+# When a release is due it then:
+#   1. writes CHANGELOG.md
+#   2. bumps the version in package.json   (@semantic-release/npm, npmPublish:false
+#      -> the version bump happens, but NO `npm publish` is run)
+#   3. commits "chore(release): v<version> [skip ci]"
+#   4. creates + pushes the `v<version>` tag
+#
+# The `[skip ci]` in the commit subject stops this workflow from re-running on
+# its own release commit (no loop). The pushed `v*` tag then triggers the
+# EXISTING `Release` workflow, which validates tag == package.json version
+# (still true, because the bump happened before the tag), builds, packs, and
+# publishes (GitHub Release + optional npm publish).
+#
+# Dependency PRs from Renovate merge as `chore(deps): ...` — `chore` is not a
+# release type, so they run this workflow but correctly produce NO release.
+#
+# Auth: uses the built-in GITHUB_TOKEN with `contents: write`. This is
+# sufficient to push the release commit + tag on the default branch AS LONG AS
+# that branch has no branch protection (required checks / PR reviews). If
+# `main` is branch-protected, GITHUB_TOKEN cannot push directly and you must
+# switch to a GitHub App token (a PAT is not recommended).
+# =============================================================================
+name: Semantic Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write # push the release commit + the v* tag
+
+# Never cancel a release mid-flight: two overlapping runs (two merges seconds
+# apart) must queue, not race the version bump / tag push.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Full history: semantic-release walks back to the last v* tag to find
+      # the commits to analyze (a shallow clone would have none).
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4'
+
+      # Install the release toolchain (semantic-release + plugins are
+      # devDependencies in package.json). --frozen-lockfile matches CI.
+      - name: Install dependencies (frozen lockfile)
+        run: bun install --frozen-lockfile
+
+      - name: Run semantic-release
+        env:
+          # GITHUB_TOKEN is the only credential needed: it lets the git plugin
+          # push the commit + tag. No NPM_TOKEN is set on purpose — npm
+          # publishing is the job of the Release workflow.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bunx semantic-release
