@@ -1,7 +1,7 @@
 # =============================================================================
 # Semantic Release (versioning + tagging) — first stage of the release pipeline
 # -----------------------------------------------------------------------------
-# On every push to main, semantic-release analyzes the new commits with the
+# On every push to master, semantic-release analyzes the new commits with the
 # conventional-commits preset and, when they are release-worthy:
 #
 #   feat:            -> minor     (0.2.0 -> 0.3.0)
@@ -30,14 +30,14 @@
 # Auth: uses the built-in GITHUB_TOKEN with `contents: write`. This is
 # sufficient to push the release commit + tag on the default branch AS LONG AS
 # that branch has no branch protection (required checks / PR reviews). If
-# `main` is branch-protected, GITHUB_TOKEN cannot push directly and you must
+# `master` is branch-protected, GITHUB_TOKEN cannot push directly and you must
 # switch to a GitHub App token (a PAT is not recommended).
 # =============================================================================
 name: Semantic Release
 
 on:
   push:
-    branches: [main]
+    branches: [master]
 
 permissions:
   contents: write # push the release commit + the v* tag
