@@ -65,6 +65,12 @@ jobs:
       - name: Install dependencies (frozen lockfile)
         run: bun install --frozen-lockfile
 
+      # Gate the publish on the offline suite: a tag push does not run the CI
+      # workflow (it fires on push/PR to main only), so the tag could point at
+      # a commit whose CI never went green. The suite is fast and offline.
+      - name: Run tests
+        run: bun test
+
       # Resolve the authoritative RELEASE_TAG + VERSION and validate it equals
       # the package.json version. Fails fast on any mismatch (catches stale
       # versions). EVENT_* / DISPATCH_TAG come from `env:` so this block stays
@@ -112,7 +118,16 @@ jobs:
         run: |
           set -euo pipefail
           if git rev-parse -q --verify "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
-            echo "Tag ${RELEASE_TAG} already exists - using it"
+            # Tags are global: an existing tag may point at another commit.
+            # Verify it points at THIS commit, otherwise the release assets
+            # would be built from the wrong source.
+            TAG_TARGET="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
+            HEAD_COMMIT="$(git rev-parse HEAD)"
+            if [ "$TAG_TARGET" != "$HEAD_COMMIT" ]; then
+              echo "::error::Tag ${RELEASE_TAG} already exists but points at ${TAG_TARGET}, not this commit ${HEAD_COMMIT}. Delete the tag or dispatch from the tagged commit and re-run."
+              exit 1
+            fi
+            echo "Tag ${RELEASE_TAG} already exists on this commit - using it"
           else
             git tag "${RELEASE_TAG}"
             git push origin "${RELEASE_TAG}"

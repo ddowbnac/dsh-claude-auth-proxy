@@ -16,11 +16,13 @@
 #   3. commits "chore(release): v<version> [skip ci]"
 #   4. creates + pushes the `v<version>` tag
 #
-# The `[skip ci]` in the commit subject stops this workflow from re-running on
-# its own release commit (no loop). The pushed `v*` tag then triggers the
-# EXISTING `Release` workflow, which validates tag == package.json version
-# (still true, because the bump happened before the tag), builds, packs, and
-# publishes (GitHub Release + optional npm publish).
+# The release commit re-runs this workflow (GitHub Actions does not honor
+# `[skip ci]` natively), but the commit is a `chore:` — a non-release type —
+# so the re-run is a no-op and produces no new commit: the cycle closes
+# without a loop. The pushed `v*` tag then triggers the EXISTING `Release`
+# workflow, which validates tag == package.json version (still true, because
+# the bump happened before the tag), builds, packs, and publishes (GitHub
+# Release + optional npm publish).
 #
 # Dependency PRs from Renovate merge as `chore(deps): ...` — `chore` is not a
 # release type, so they run this workflow but correctly produce NO release.

@@ -33,18 +33,16 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bunx tsc --noEmit
 
-  # Full offline suite
+  # Full offline suite.
+  # Pinned to bun 1.4: bun.lock is lockfileVersion 2 (written by bun 1.4) and
+  # older bun cannot install it frozen, so a multi-version matrix is not viable.
   test:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        bun-version: ['1.3', '1.4']
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: ${{ matrix.bun-version }}
+          bun-version: '1.4'
       - run: bun install --frozen-lockfile
       - run: bun test
 
