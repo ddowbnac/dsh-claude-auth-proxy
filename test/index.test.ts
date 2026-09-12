@@ -1,4 +1,7 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import * as plugin from '../src/index.ts'
 import { PROVIDER_ID, PROVIDER_NAME } from '../src/adapter.ts'
 
@@ -43,9 +46,24 @@ describe('plugin entry', () => {
     expect(plugin.Config).toBeDefined()
   })
 
+  // apply() reads the credentials file when it builds the provider directory
+  // entry. Pointing at a fixture (instead of the default ~/.claude/.credentials.json)
+  // keeps the assertions identical on machines with a real `claude` login and
+  // on CI runners without one.
+  let dir: string
+  let credsPath: string
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'dsh-plugin-'))
+    credsPath = join(dir, '.credentials.json')
+    writeFileSync(credsPath, JSON.stringify({
+      claudeAiOauth: { accessToken: 'a', refreshToken: 'r', expiresAt: Date.now() + 3_600_000 },
+    }))
+  })
+  afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
   test('apply registers the claude-subscription provider and a settings section', () => {
     const { ctx, calls } = makeCtx()
-    const config = plugin.Config({})
+    const config = plugin.Config({ credentialsPath: credsPath })
     plugin.apply(ctx as never, config as never)
     const reg = calls.registerAdapter as { providers: string[]; adapter: unknown }
     expect(reg.providers).toEqual([PROVIDER_ID])
@@ -58,5 +76,16 @@ describe('plugin entry', () => {
       declared: true,
     }])
     expect((calls.section as unknown[])[1]).toBe('claude-auth')
+  })
+
+  test('apply reports a diagnostic on the provider entry when the credentials file is missing', () => {
+    const { ctx, calls } = makeCtx()
+    const config = plugin.Config({ credentialsPath: join(dir, 'missing.json') })
+    plugin.apply(ctx as never, config as never)
+    const entries = calls.directory as Array<Record<string, unknown>>
+    expect(entries).toHaveLength(1)
+    expect(entries[0].provider).toBe(PROVIDER_ID)
+    expect(entries[0].declared).toBe(true)
+    expect(entries[0].error).toMatch(/No Claude Code OAuth credentials found/)
   })
 })
