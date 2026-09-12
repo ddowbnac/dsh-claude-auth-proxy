@@ -60,9 +60,11 @@ jobs:
       - name: Assert bun.lock is lockfileVersion 1
         run: |
           set -euo pipefail
-          VERSION="$(node -p "require(`"./bun.lock`").lockfileVersion" 2>/dev/null || awk -F`"'`" `/lockfileVersion/ {print $4; exit}` bun.lock)"
+          # bun.lock is JSONC (bun allows trailing commas), so do not parse it
+          # as strict JSON - extract the lockfileVersion number from its line.
+          VERSION="$(grep -m1 "lockfileVersion" bun.lock | grep -o "[0-9]\{1,\}" | head -n1)"
           if [ "$VERSION" != "1" ]; then
-            echo "::error::bun.lock is lockfileVersion ${VERSION:-unknown}. Keep it at 1 while Dependabot's updater image ships bun < 1.4 (dependabot-core#16026)."
+            echo "::error::bun.lock is lockfileVersion ${VERSION:-unknown}. Keep it at 1 while Dependabot's updater image ships bun < 1.4 (dependabot-core#16026). Downgrade: set \"lockfileVersion\": 1 and run 'bun install --frozen-lockfile'."
             exit 1
           fi
           echo "bun.lock is lockfileVersion 1 - OK"
