@@ -49,6 +49,24 @@ on:
         default: ''
 
 jobs:
+  # Pin bun.lock to lockfileVersion 1 (see check-lockfile-version in ci.yml for
+  # the full rationale: Dependabot's updater image ships bun < 1.4, which
+  # rejects v2 lockfiles - dependabot-core#16026). Release tags do NOT run the
+  # CI workflow, so this job also guards the release path.
+  check-lockfile-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert bun.lock is lockfileVersion 1
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require(`"./bun.lock`").lockfileVersion" 2>/dev/null || awk -F`"'`" `/lockfileVersion/ {print $4; exit}` bun.lock)"
+          if [ "$VERSION" != "1" ]; then
+            echo "::error::bun.lock is lockfileVersion ${VERSION:-unknown}. Keep it at 1 while Dependabot's updater image ships bun < 1.4 (dependabot-core#16026)."
+            exit 1
+          fi
+          echo "bun.lock is lockfileVersion 1 - OK"
+
   release:
     runs-on: ubuntu-latest
     steps:
