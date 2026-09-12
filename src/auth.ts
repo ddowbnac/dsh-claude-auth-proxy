@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { LlmError } from '@deepseek-ai/dsh-llm'
 import { existsSync, readFileSync, writeFileSync, renameSync, unlinkSync, openSync, closeSync, chmodSync, constants, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join, isAbsolute } from 'node:path'
+import { basename, dirname, join, isAbsolute } from 'node:path'
 import {
   ANTHROPIC_API_VERSION,
   API_BASE_URL,
@@ -96,7 +96,7 @@ export function writeBackCredentials(path: string, credentials: ClaudeOAuthCrede
     ...credentials,
     scopes: credentials.scopes ?? [],
   }
-  const target = join(dirname(path), `.${basenameNoExt(path)}.${randomUUID()}.tmp`)
+  const target = join(dirname(path), `.${basename(path).replace(/\.[^.]*$/, '')}.${randomUUID()}.tmp`)
   writeFileSync(target, JSON.stringify(doc, null, 2), { mode: 0o600 })
   try {
     renameSync(target, path)
@@ -112,11 +112,6 @@ export function writeBackCredentials(path: string, credentials: ClaudeOAuthCrede
   } catch {
   }
   return true
-}
-
-function basenameNoExt(p: string): string {
-  const base = p.split('/').pop() ?? 'credentials'
-  return base.replace(/\.[^.]+$/, '')
 }
 
 function parseRetryAfterMs(headerValue: string | null): number | undefined {
