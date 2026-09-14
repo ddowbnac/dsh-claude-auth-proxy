@@ -228,4 +228,42 @@ describe('AnthropicEventTranslator', () => {
     const chunks = run(sse, known)
     expect(chunks[0]).toEqual({ type: 'tool-call-delta', index: 0, id: expect.anything(), name: 'mcp_frobnicate', argumentsDelta: '' })
   })
+
+  test('text block and tool call get distinct harness indices (regression: index collision drops tool call)', () => {
+    const chunks = run(
+      'data: {"type":"message_start","message":{"id":"m11","usage":{"input_tokens":1}}}\n\n'
+      + 'data: {"type":"content_block_start","index":0,"content_block":{"type":"text"}}\n\n'
+      + 'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"I will read the file."}}\n\n'
+      + 'data: {"type":"content_block_stop","index":0}\n\n'
+      + 'data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_read","name":"read"}}\n\n'
+      + 'data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\\"file_path\\":\\"answer.txt\\"}"}}\n\n'
+      + 'data: {"type":"content_block_stop","index":1}\n\n'
+      + 'data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":20}}\n\n'
+      + 'data: {"type":"message_stop"}\n\n',
+    )
+    const textEnd = chunks.find((c): c is Extract<import('@deepseek-ai/dsh-llm').StreamChunk, { type: 'block-end' }> => c.type === 'block-end' && c.block.type === 'text')
+    const toolEnd = chunks.find((c): c is Extract<import('@deepseek-ai/dsh-llm').StreamChunk, { type: 'block-end' }> => c.type === 'block-end' && c.block.type === 'tool-call')
+    expect(textEnd).toBeDefined()
+    expect(toolEnd).toBeDefined()
+    expect(textEnd!.index).not.toBe(toolEnd!.index)
+    expect((toolEnd!.block as { type: string; name: string; arguments: string }).name).toBe('read')
+    expect((toolEnd!.block as { type: string; name: string; arguments: string }).arguments).toBe('{"file_path":"answer.txt"}')
+  })
+
+  test('multiple tool calls each get distinct harness indices', () => {
+    const chunks = run(
+      'data: {"type":"message_start","message":{"id":"m12","usage":{"input_tokens":1}}}\n\n'
+      + 'data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_a","name":"bash"}}\n\n'
+      + 'data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\\"command\\":\\"ls\\"}"}}\n\n'
+      + 'data: {"type":"content_block_stop","index":0}\n\n'
+      + 'data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_b","name":"grep"}}\n\n'
+      + 'data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\\"pattern\\":\\"foo\\"}"}}\n\n'
+      + 'data: {"type":"content_block_stop","index":1}\n\n'
+      + 'data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":20}}\n\n'
+      + 'data: {"type":"message_stop"}\n\n',
+    )
+    const toolEnds = chunks.filter((c): c is Extract<import('@deepseek-ai/dsh-llm').StreamChunk, { type: 'block-end' }> => c.type === 'block-end' && c.block.type === 'tool-call')
+    expect(toolEnds).toHaveLength(2)
+    expect(toolEnds[0]!.index).not.toBe(toolEnds[1]!.index)
+  })
 })

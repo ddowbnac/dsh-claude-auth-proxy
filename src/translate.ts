@@ -80,14 +80,15 @@ export class AnthropicEventTranslator {
     const block = (event.content_block ?? {}) as Record<string, unknown>
     switch (block.type) {
       case 'text': {
-        this.openTextIndex = this.nextBlockIndex
+        this.openTextIndex = this.nextBlockIndex++
         this.openText = ''
         const carry = this.thinkingCarry
         this.thinkingCarry = ''
-        const chunks: StreamChunk[] = [{ type: 'block-start', index: this.nextBlockIndex, blockType: 'text' }]
+        const idx = this.openTextIndex
+        const chunks: StreamChunk[] = [{ type: 'block-start', index: idx, blockType: 'text' }]
         if (carry.length > 0) {
           this.openText = carry
-          chunks.push({ type: 'text-delta', index: this.nextBlockIndex, text: carry })
+          chunks.push({ type: 'text-delta', index: idx, text: carry })
         }
         return chunks
       }
@@ -98,7 +99,7 @@ export class AnthropicEventTranslator {
         const id = typeof block.id === 'string' ? block.id : `toolu_${index}`
         const rawName = typeof block.name === 'string' ? block.name : ''
         const name = this.resolveToolName(rawName)
-        const blockIndex = this.nextBlockIndex
+        const blockIndex = this.nextBlockIndex++
         this.openToolCalls.set(index, { blockIndex, id, name, args: '' })
         return [{
           type: 'tool-call-delta',
@@ -217,7 +218,7 @@ export class AnthropicEventTranslator {
       // Thinking-only stream: no text block ever opened. Flush the carried
       // thinking as a non-empty text block so the harness stores a non-empty
       // assistant (an empty-text turn would 400 on replay).
-      const blockIndex = this.nextBlockIndex
+      const blockIndex = this.nextBlockIndex++
       const text = this.thinkingCarry
       this.thinkingCarry = ''
       this.emittedBlocks++
