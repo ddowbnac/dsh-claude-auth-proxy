@@ -1,3 +1,10 @@
+## [0.1.3](https://github.com/ddowbnac/dsh-claude-auth-proxy/compare/v0.1.2...v0.1.3) (2026-09-14)
+
+
+### Bug Fixes
+
+* assign unique harness block index per content block ([5a02a47](https://github.com/ddowbnac/dsh-claude-auth-proxy/commit/5a02a47d2fc7aca1d1bd4d2c12c5f5dcdff52986))
+
 ## [0.1.2](https://github.com/ddowbnac/dsh-claude-auth-proxy/compare/v0.1.1...v0.1.2) (2026-09-12)
 
 

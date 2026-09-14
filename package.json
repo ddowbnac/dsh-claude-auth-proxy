@@ -1,7 +1,7 @@
 {
   "name": "@djdowbnac/dsh-claude-auth",
   "description": "LLM provider plugin for the DeepSeek Harness (dsh): streams Claude (Sonnet/Haiku/Opus) through your Claude Code subscription (claude.ai OAuth credentials), no Anthropic API key required.",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
