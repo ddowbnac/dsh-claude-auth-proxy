@@ -1,7 +1,7 @@
 import { LlmError } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, GenerateOptions, Message, ToolResultBlock } from '@deepseek-ai/dsh-llm'
+import type { AssistantMessage, ContentBlock, GenerateOptions, RequestMessage, ToolResultMessage } from '@deepseek-ai/dsh-llm'
 import { buildBillingHeader } from './billing.ts'
-import { SYSTEM_IDENTITY, type WireBlock, type WireImageBlock, type WireMessage, type WireRequest, type WireTool } from './types.ts'
+import { SYSTEM_IDENTITY, type WireBlock, type WireImageBlock, type WireMessage, type WireRequest, type WireTool, type WireToolResultBlock } from './types.ts'
 import { supportsEffort } from './model-config.ts'
 
 /**
@@ -30,15 +30,14 @@ interface ResolvedImage {
   dataBase64: string
 }
 
-function flattenText(blocks: ContentBlock[]): string {
+function flattenText(blocks: readonly ContentBlock[]): string {
   return blocks.filter(block => block.type === 'text').map(block => block.text).join('')
 }
 
-/** Walk a message's content (including nested tool-result content) for image refs, in order. */
+/** Walk a message's content for image refs, in order. */
 function collectImageRefs(content: readonly ContentBlock[], out: ImageRef[]): void {
   for (const block of content) {
     if (block.type === 'image') out.push(block.attachment)
-    else if (block.type === 'tool-result') collectImageRefs(block.content, out)
   }
 }
 
@@ -48,7 +47,7 @@ function collectImageRefs(content: readonly ContentBlock[], out: ImageRef[]): vo
  * common text-only case) this is a no-op returning an empty map.
  */
 async function resolveImages(
-  messages: readonly Message[],
+  messages: readonly RequestMessage[],
   attachments: AttachmentReader | undefined,
   signal: AbortSignal | undefined,
 ): Promise<Map<string, ResolvedImage>> {
@@ -108,7 +107,7 @@ function imageBlock(ref: ImageRef, images: Map<string, ResolvedImage>): WireImag
   return { type: 'image', source: { type: 'base64', media_type: resolved.mediaType, data: resolved.dataBase64 } }
 }
 
-function serializeAssistant(message: Message, multiTool: boolean, images: Map<string, ResolvedImage>, mapId: (raw: string) => string): WireMessage | undefined {
+function serializeAssistant(message: AssistantMessage, multiTool: boolean, images: Map<string, ResolvedImage>, mapId: (raw: string) => string): WireMessage | undefined {
   const text = flattenText(message.content)
   const toolCalls = message.content.filter(block => block.type === 'tool-call')
   const imageBlocks = message.content
@@ -136,7 +135,7 @@ function serializeAssistant(message: Message, multiTool: boolean, images: Map<st
   return blocks.length > 0 ? { role: 'assistant', content: blocks } : undefined
 }
 
-function toolResultContent(result: ToolResultBlock, images: Map<string, ResolvedImage>): string | WireBlock[] {
+function toolResultContent(result: ToolResultMessage, images: Map<string, ResolvedImage>): string | WireBlock[] {
   const imagesInResult = result.content
     .filter((block): block is Extract<ContentBlock, { type: 'image' }> => block.type === 'image')
     .map(block => imageBlock(block.attachment, images))
@@ -149,14 +148,13 @@ function toolResultContent(result: ToolResultBlock, images: Map<string, Resolved
   return blocks
 }
 
-function serializeUser(message: Message, images: Map<string, ResolvedImage>, mapId: (raw: string) => string): WireMessage[] {
+function serializeUser(message: { content: readonly ContentBlock[] }, images: Map<string, ResolvedImage>): WireMessage[] {
   const out: WireMessage[] = []
   const userImages = message.content
     .filter((block): block is Extract<ContentBlock, { type: 'image' }> => block.type === 'image')
     .map(block => imageBlock(block.attachment, images))
     .filter((block): block is WireImageBlock => block !== undefined)
   const text = flattenText(message.content)
-  const toolResults = message.content.filter((block): block is ToolResultBlock => block.type === 'tool-result')
 
   if (userImages.length > 0 || text.trim().length > 0) {
     if (userImages.length === 0) {
@@ -168,16 +166,18 @@ function serializeUser(message: Message, images: Map<string, ResolvedImage>, map
       out.push({ role: 'user', content: blocks })
     }
   }
-  if (toolResults.length > 0) {
-    const blocks: WireBlock[] = toolResults.map(result => ({
-      type: 'tool_result',
-      tool_use_id: mapId(result.toolCallId),
-      content: toolResultContent(result, images),
-      ...result.isError === true ? { is_error: true } : {},
-    }))
-    out.push({ role: 'user', content: blocks })
-  }
   return out
+}
+
+/** A first-class `tool` message answers one assistant `tool_use`; on the wire it is a user message. */
+function serializeToolResult(message: ToolResultMessage, images: Map<string, ResolvedImage>, mapId: (raw: string) => string): WireMessage | undefined {
+  const block: WireToolResultBlock = {
+    type: 'tool_result',
+    tool_use_id: mapId(message.toolCallId),
+    content: toolResultContent(message, images),
+    ...message.isError === true ? { is_error: true } : {},
+  }
+  return { role: 'user', content: [block] }
 }
 
 function stripLeadingSystem(wire: WireMessage[]): WireMessage[] {
@@ -276,7 +276,7 @@ function repairToolAdjacency(wire: WireMessage[]): WireMessage[] {
   return out
 }
 
-export function serializeMessages(messages: readonly Message[], multiTool: boolean, images: Map<string, ResolvedImage> = new Map()): WireMessage[] {
+export function serializeMessages(messages: readonly RequestMessage[], multiTool: boolean, images: Map<string, ResolvedImage> = new Map()): WireMessage[] {
   const mapId = toolIdMapper()
   const wire: WireMessage[] = []
   for (const message of messages) {
@@ -285,12 +285,23 @@ export function serializeMessages(messages: readonly Message[], multiTool: boole
       if (text.trim().length > 0) wire.push({ role: 'system', content: text })
       continue
     }
+    if (message.role === 'developer') {
+      // Tool additions/removals are recorded for routes that declare `toolUpdate`;
+      // this provider sends the complete tool list on every request, so there is
+      // nothing to place on the wire.
+      continue
+    }
     if (message.role === 'assistant') {
       const assistant = serializeAssistant(message, multiTool, images, mapId)
       if (assistant !== undefined) wire.push(assistant)
       continue
     }
-    for (const user of serializeUser(message, images, mapId)) wire.push(user)
+    if (message.role === 'tool') {
+      const result = serializeToolResult(message, images, mapId)
+      if (result !== undefined) wire.push(result)
+      continue
+    }
+    for (const user of serializeUser(message, images)) wire.push(user)
   }
   return mergeConsecutiveRoles(repairToolAdjacency(stripLeadingSystem(wire)))
 }
