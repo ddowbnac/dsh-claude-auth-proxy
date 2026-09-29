@@ -122,6 +122,8 @@ jobs:
           # Export for later steps in this job (Ensure-tag, Pack).
           echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          # Step output consumed by the Create-GitHub-Release step (tag_name).
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
 
           if [ "$VERSION" != "$PKG_VERSION" ]; then
             echo "::error::Release version '$VERSION' does not match package.json version '$PKG_VERSION'. Bump package.json to the tag's version (or dispatch with the correct tag) and re-run."
@@ -180,6 +182,11 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          # Pin the tag explicitly. The action otherwise falls back to
+          # `github.ref`, which on workflow_dispatch is the branch
+          # (refs/heads/master), not a tag - it then fails with
+          # "GitHub Releases requires a tag".
+          tag_name: ${{ steps.resolve.outputs.release_tag }}
           # `files` accepts globs; the working dir holds exactly one .tgz (the
           # pack output). fail_on_unmatched_files guards against shipping nothing.
           files: |
