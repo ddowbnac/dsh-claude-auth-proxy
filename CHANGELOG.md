@@ -1,3 +1,11 @@
+## [0.1.4](https://github.com/ddowbnac/dsh-claude-auth-proxy/compare/v0.1.3...v0.1.4) (2026-09-29)
+
+
+### Bug Fixes
+
+* port to the dsh 0.1.7 message model (tool-role results) ([6734db8](https://github.com/ddowbnac/dsh-claude-auth-proxy/commit/6734db809f93d3b5d6f618aa0744d309df149c10))
+* port to the dsh 0.1.7 settings model (volatile config) ([3ab1bf8](https://github.com/ddowbnac/dsh-claude-auth-proxy/commit/3ab1bf84ca92b2704ecdcdf7c1d6552b259cfed3))
+
 ## [0.1.3](https://github.com/ddowbnac/dsh-claude-auth-proxy/compare/v0.1.2...v0.1.3) (2026-09-14)
 
 
