@@ -13,13 +13,17 @@
 #   1. writes CHANGELOG.md
 #   2. bumps the version in package.json   (@semantic-release/npm, npmPublish:false
 #      -> the version bump happens, but NO `npm publish` is run)
-#   3. commits "chore(release): v<version> [skip ci]"
+#   3. commits "chore(release): <version>"  (NO `[skip ci]` - see below)
 #   4. creates + pushes the `v<version>` tag
 #
-# The release commit re-runs this workflow (GitHub Actions does not honor
-# `[skip ci]` natively), but the commit is a `chore:` — a non-release type —
-# so the re-run is a no-op and produces no new commit: the cycle closes
-# without a loop. The pushed `v*` tag then triggers the EXISTING `Release`
+# The release commit deliberately carries NO `[skip ci]` marker: GitHub
+# applies that marker to the tagged commit as well, which silently
+# suppresses the tag-push trigger of the Release workflow below (the
+# pipeline would then need a manual dispatch). The extra runs on the
+# release commit are harmless: this workflow re-runs, finds no commits
+# since the new tag, and exits as a no-op; CI passes on the same tree.
+#
+# The pushed `v*` tag then triggers the EXISTING `Release`
 # workflow, which validates tag == package.json version (still true, because
 # the bump happened before the tag), builds, packs, and publishes (GitHub
 # Release + optional npm publish).
