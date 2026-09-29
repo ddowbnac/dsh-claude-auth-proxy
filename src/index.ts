@@ -26,15 +26,20 @@ export const inject = ['llm'] as const
 const NS = 'claude-auth'
 
 export const Config = z.object({
-  credentialsPath: z.string().default(''),
-  disabledModels: z.array(z.string()).default([]),
-  streamIdleTimeoutMs: z.number().step(1).min(5_000).default(DEFAULT_STREAM_IDLE_TIMEOUT_MS),
-  requestTimeoutMs: z.number().step(1).min(30_000).default(DEFAULT_REQUEST_TIMEOUT_MS),
+  credentialsPath: z.string().default('').volatile(),
+  disabledModels: z.array(z.string()).default([]).volatile(),
+  streamIdleTimeoutMs: z.number().step(1).min(5_000).default(DEFAULT_STREAM_IDLE_TIMEOUT_MS).volatile(),
+  requestTimeoutMs: z.number().step(1).min(30_000).default(DEFAULT_REQUEST_TIMEOUT_MS).volatile(),
 })
-
 type ConfigValue = ReturnType<typeof Config>
-
-function resolveConnection(config: ConfigValue): ClaudeConnectionOptions {
+type ResolvedConfig = {
+  credentialsPath: string
+  disabledModels: readonly string[]
+  streamIdleTimeoutMs: number
+  requestTimeoutMs: number
+}
+type VolatileCtx = Context & { on: (event: 'loader/volatile-update', handler: () => void) => void }
+function resolveConnection(config: ResolvedConfig): ClaudeConnectionOptions {
   return {
     credentialsPath: config.credentialsPath,
     disabledModels: config.disabledModels,
@@ -55,7 +60,12 @@ function deriveCredentialRef(provider: string): string {
 }
 
 export function apply(ctx: Context, config: ConfigValue): void {
-  let current = (): ConfigValue => config
+  const current = (): ResolvedConfig => ({
+    credentialsPath: config.credentialsPath.get(),
+    disabledModels: config.disabledModels.get(),
+    streamIdleTimeoutMs: config.streamIdleTimeoutMs.get(),
+    requestTimeoutMs: config.requestTimeoutMs.get(),
+  })
   let store: ClaudeCredentialStore | undefined
   let lastSyncedToken: string | undefined
 
@@ -157,15 +167,9 @@ export function apply(ctx: Context, config: ConfigValue): void {
     })
   }
 
-  ctx.inject(['settings'], (settingsCtx) => {
-    (settingsCtx as any).settings.installSection(ctx, NS, Config, config, {
-      setSource: (source: () => ConfigValue) => {
-        current = source
-      },
-      onChange: () => {
-        refreshDirectory()
-      },
-    })
+  const c = ctx as VolatileCtx
+  c.on('loader/volatile-update', () => {
+    refreshDirectory()
   })
 
   storeNow()

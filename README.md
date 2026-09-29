@@ -14,7 +14,7 @@ The plugin keeps an access token in memory for 30 seconds and only calls the tok
 
 ## Install
 
-Prerequisites: dsh on the `0.1.5-rc` line, bun, and a one-time `claude` login.
+Prerequisites: dsh on the `0.1.7-rc` line, bun, and a one-time `claude` login.
 
 ```sh
 dsh plugin --profile <name> add @djdowbnac/dsh-claude-auth
@@ -48,7 +48,7 @@ Reasoning effort is not a provider setting. Pick it in the model selection popup
 ## Develop
 
 ```sh
-bun test        # 72 tests, all offline
+bun test        # 81 tests, all offline
 bun run build
 bun run smoke   # one live request, costs a few tokens
 ```

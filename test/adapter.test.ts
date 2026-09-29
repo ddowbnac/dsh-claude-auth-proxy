@@ -51,7 +51,7 @@ function makeRequest(overrides: Partial<GenerateOptions> = {}): GenerateOptions 
   return {
     provider: PROVIDER_ID,
     model: 'claude-sonnet-5',
-    messages: [createUserMessage({ content: [{ type: 'text', text: 'hello' }], source: { kind: 'user' as const, user: 'U' } })],
+    messages: [createUserMessage({ content: [{ type: 'text', text: 'hello' }], source: { kind: 'user' as const } })],
     maxTokens: 1000,
     ...overrides,
   }

@@ -1,32 +1,31 @@
 import { describe, expect, test } from 'bun:test'
-import { MessageId, ToolCallId, createUserMessage, createSystemMessage } from '@deepseek-ai/dsh-llm'
+import { MessageId, ToolCallId, createUserMessage, createSystemMessage, createToolResultMessage, createDeveloperMessage } from '@deepseek-ai/dsh-llm'
 import { randomUUID } from 'node:crypto'
 import { serializeMessages, serializeRequest } from '../src/serialize.ts'
 import { SYSTEM_IDENTITY } from '../src/types.ts'
 
 describe('serializeMessages', () => {
   test('user text passes through', () => {
-    const user = createUserMessage({ content: [{ type: 'text', text: 'hello' }], source: { kind: 'user' as const, user: 'U' } })
+    const user = createUserMessage({ content: [{ type: 'text', text: 'hello' }], source: { kind: 'user' as const } })
     const wire = serializeMessages([user], false)
     expect(wire).toEqual([{ role: 'user', content: 'hello' }])
   })
 
   test('system messages are separated', () => {
-    const system = createSystemMessage('be brief', 'test')
-    const user = createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' as const, user: 'U' } })
+    const system = createSystemMessage('be brief')
+    const user = createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' as const } })
     const wire = serializeMessages([system, user], false)
     expect(wire.some(m => m.role === 'system')).toBe(false)
     expect(wire).toEqual([{ role: 'user', content: 'hi' }])
   })
 
   test('tool results become tool_result blocks in a user message', () => {
-    const user = createUserMessage({
-      content: [
-        { type: 'tool-result', toolCallId: ToolCallId('call_1'), content: [{ type: 'text', text: '42' }] },
-      ],
-      source: { kind: 'user' as const, user: 'U' },
+    const result = createToolResultMessage({
+      callId: ToolCallId('call_1'),
+      content: [{ type: 'text', text: '42' }],
+      isError: false,
     })
-    const wire = serializeMessages([user], false)
+    const wire = serializeMessages([result], false)
     expect(wire).toEqual([{
       role: 'user',
       content: [{ type: 'tool_result', tool_use_id: 'call_1', content: '42' }],
@@ -34,13 +33,12 @@ describe('serializeMessages', () => {
   })
 
   test('empty tool results send a placeholder', () => {
-    const user = createUserMessage({
-      content: [
-        { type: 'tool-result', toolCallId: ToolCallId('call_2'), content: [], isError: true },
-      ],
-      source: { kind: 'user' as const, user: 'U' },
+    const result = createToolResultMessage({
+      callId: ToolCallId('call_2'),
+      content: [],
+      isError: true,
     })
-    const wire = serializeMessages([user], false)
+    const wire = serializeMessages([result], false)
     expect(wire[0]).toEqual({
       role: 'user',
       content: [{ type: 'tool_result', tool_use_id: 'call_2', content: '(no output)', is_error: true }],
@@ -73,11 +71,10 @@ describe('serializeMessages', () => {
         { type: 'tool-call' as const, id: ToolCallId(composite), name: 'bash', arguments: '{"cmd":"ls"}' },
       ],
     }
-    const result = createUserMessage({
-      content: [
-        { type: 'tool-result' as const, toolCallId: ToolCallId(composite), content: [{ type: 'text' as const, text: 'ok' }] },
-      ],
-      source: { kind: 'user' as const, user: 'U' },
+    const result = createToolResultMessage({
+      callId: ToolCallId(composite),
+      content: [{ type: 'text', text: 'ok' }],
+      isError: false,
     })
     const wire = serializeMessages([assistant, result], false)
     const toolUse = (wire[0].content as unknown as Array<Record<string, unknown>>).find(b => b.type === 'tool_use')
@@ -97,19 +94,13 @@ describe('serializeMessages', () => {
       source: { kind: 'model' as const, provider: 'claude-subscription', model: 'claude-sonnet-5' },
       content: [{ type: 'tool-call' as const, id: ToolCallId(composite), name: 'bash', arguments: '{}' }],
     }
-    const r1 = createUserMessage({
-      content: [{ type: 'tool-result' as const, toolCallId: ToolCallId(composite), content: [{ type: 'text' as const, text: '1' }] }],
-      source: { kind: 'user' as const, user: 'U' },
-    })
+    const r1 = createToolResultMessage({ callId: ToolCallId(composite), content: [{ type: 'text', text: '1' }], isError: false })
     const a2 = {
       role: 'assistant' as const, id: MessageId(randomUUID()),
       source: { kind: 'model' as const, provider: 'claude-subscription', model: 'claude-sonnet-5' },
       content: [{ type: 'tool-call' as const, id: ToolCallId(composite), name: 'bash', arguments: '{}' }],
     }
-    const r2 = createUserMessage({
-      content: [{ type: 'tool-result' as const, toolCallId: ToolCallId(composite), content: [{ type: 'text' as const, text: '2' }] }],
-      source: { kind: 'user' as const, user: 'U' },
-    })
+    const r2 = createToolResultMessage({ callId: ToolCallId(composite), content: [{ type: 'text', text: '2' }], isError: false })
     const wire = serializeMessages([a1, r1, a2, r2], false)
     const ids = wire
       .flatMap(m => Array.isArray(m.content) ? m.content : [])
@@ -153,7 +144,7 @@ describe('serializeMessages', () => {
       source: { kind: 'model' as const, provider: 'claude-subscription', model: 'claude-sonnet-5' },
       content: [{ type: 'reasoning' as const, text: 'pondering' }],
     }
-    const user = createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' as const, user: 'U' } })
+    const user = createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' as const } })
     const wire = serializeMessages([user, reasoningOnly], false)
     expect(wire.some(m => m.role === 'assistant')).toBe(false)
   })
@@ -167,7 +158,7 @@ describe('serializeMessages', () => {
         { type: 'tool-call' as const, id: ToolCallId('call_orphan'), name: 'bash', arguments: '{}' },
       ],
     }
-    const nextUser = createUserMessage({ content: [{ type: 'text', text: 'continue' }], source: { kind: 'user' as const, user: 'U' } })
+    const nextUser = createUserMessage({ content: [{ type: 'text', text: 'continue' }], source: { kind: 'user' as const } })
     const wire = serializeMessages([orphan, nextUser], false)
     const users = wire.filter(m => m.role === 'user')
     const withPlaceholder = users.find(m => Array.isArray(m.content)
@@ -194,8 +185,8 @@ describe('serializeMessages', () => {
 
 describe('serializeRequest', () => {
   test('system is identity-led; other system text relocates to first user message', async () => {
-    const system = createSystemMessage('You are a helpful assistant.', 'test')
-    const user = createUserMessage({ content: [{ type: 'text', text: 'do the thing' }], source: { kind: 'user' as const, user: 'U' } })
+    const system = createSystemMessage('You are a helpful assistant.')
+    const user = createUserMessage({ content: [{ type: 'text', text: 'do the thing' }], source: { kind: 'user' as const } })
     const body = await serializeRequest({
       provider: 'claude-subscription',
       model: 'claude-sonnet-5',
@@ -213,7 +204,7 @@ describe('serializeRequest', () => {
   })
 
   test('identity-only system stays in system[]', async () => {
-    const user = createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' as const, user: 'U' } })
+    const user = createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' as const } })
     const body = await serializeRequest({
       provider: 'claude-subscription',
       model: 'claude-sonnet-5',
@@ -225,7 +216,7 @@ describe('serializeRequest', () => {
   })
 
   test('effort maps to output_config for supporting models only', async () => {
-    const user = createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' as const, user: 'U' } })
+    const user = createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' as const } })
     const base = {
       provider: 'claude-subscription',
       model: 'claude-sonnet-5',
@@ -243,7 +234,7 @@ describe('serializeRequest', () => {
   })
 
   test('branded effort id serializes to the wire effort value', async () => {
-    const user = createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' as const, user: 'U' } })
+    const user = createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' as const } })
     const { ReasoningEffortId } = require('@deepseek-ai/dsh-llm')
     const body = await serializeRequest({
       provider: 'claude-subscription',
@@ -255,7 +246,7 @@ describe('serializeRequest', () => {
   })
 
   test('off effort never reaches the wire', async () => {
-    const user = createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' as const, user: 'U' } })
+    const user = createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' as const } })
     const body = await serializeRequest({
       provider: 'claude-subscription',
       model: 'claude-sonnet-5',
@@ -266,7 +257,7 @@ describe('serializeRequest', () => {
   })
 
   test('tools map to input_schema with mcp_ prefix when multiple', async () => {
-    const user = createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' as const, user: 'U' } })
+    const user = createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' as const } })
     const body = await serializeRequest({
       provider: 'claude-subscription',
       model: 'claude-sonnet-5',
@@ -283,7 +274,7 @@ describe('serializeRequest', () => {
   })
 
   test('defaults: stream true, max_tokens fallback', async () => {
-    const user = createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' as const, user: 'U' } })
+    const user = createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' as const } })
     const body = await serializeRequest({
       provider: 'claude-subscription',
       model: 'claude-sonnet-5',
@@ -295,7 +286,7 @@ describe('serializeRequest', () => {
 })
 
   test('billing header is injected as system[0] with cch and version suffix', async () => {
-    const user = createUserMessage({ content: [{ type: 'text', text: 'hello world' }], source: { kind: 'user' as const, user: 'U' } })
+    const user = createUserMessage({ content: [{ type: 'text', text: 'hello world' }], source: { kind: 'user' as const } })
     const body = await serializeRequest({
       provider: 'claude-subscription',
       model: 'claude-sonnet-5',
@@ -311,7 +302,7 @@ describe('serializeRequest', () => {
   test('billing header cch matches sha256 of first user text', async () => {
     const { createHash } = require('node:crypto')
     const text = 'test message for hashing'
-    const user = createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' as const, user: 'U' } })
+    const user = createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' as const } })
     const body = await serializeRequest({
       provider: 'claude-subscription',
       model: 'claude-sonnet-5',
@@ -330,7 +321,7 @@ describe('empty content sanitization', () => {
       source: { kind: 'model' as const, provider: 'claude-subscription', model: 'claude-sonnet-5' },
       content: [{ type: 'text' as const, text: '   ' }],
     }
-    const user = createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' as const, user: 'U' } })
+    const user = createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' as const } })
     const wire = serializeMessages([user, assistant], false)
     expect(wire.some(m => m.role === 'assistant')).toBe(false)
   })
@@ -353,10 +344,10 @@ describe('empty content sanitization', () => {
     const user = {
       role: 'user' as const,
       id: MessageId(randomUUID()),
-      source: { kind: 'user' as const, user: 'U' },
+      source: { kind: 'user' as const },
       content: [{ type: 'text' as const, text: '' }],
     }
-    const realUser = createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' as const, user: 'U' } })
+    const realUser = createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' as const } })
     const wire = serializeMessages([realUser, user], false)
     expect(wire).toHaveLength(1)
   })
@@ -364,14 +355,14 @@ describe('empty content sanitization', () => {
 
 describe('boundary sanitizer', () => {
   test('empty assistant turn (interrupted stream) is dropped, not sent as empty text', async () => {
-    const user = createUserMessage({ content: [{ type: 'text', text: 'hola' }], source: { kind: 'user' as const, user: 'U' } })
+    const user = createUserMessage({ content: [{ type: 'text', text: 'hola' }], source: { kind: 'user' as const } })
     const emptyAssistant = {
       role: 'assistant' as const,
       id: MessageId(randomUUID()),
       source: { kind: 'model' as const, provider: 'claude-subscription', model: 'claude-sonnet-5' },
       content: [{ type: 'text' as const, text: '' }],
     }
-    const next = createUserMessage({ content: [{ type: 'text', text: 'continua' }], source: { kind: 'user' as const, user: 'U' } })
+    const next = createUserMessage({ content: [{ type: 'text', text: 'continua' }], source: { kind: 'user' as const } })
     const wire = serializeMessages([user, emptyAssistant, next], false)
     expect(wire.some(m => m.role === 'assistant')).toBe(false)
     expect(wire.map(m => m.role)).toEqual(['user'])
@@ -379,8 +370,8 @@ describe('boundary sanitizer', () => {
   })
 
   test('consecutive user messages merge into one (API role alternation)', async () => {
-    const u1 = createUserMessage({ content: [{ type: 'text', text: 'primero' }], source: { kind: 'user' as const, user: 'U' } })
-    const u2 = createUserMessage({ content: [{ type: 'text', text: 'segundo' }], source: { kind: 'user' as const, user: 'U' } })
+    const u1 = createUserMessage({ content: [{ type: 'text', text: 'primero' }], source: { kind: 'user' as const } })
+    const u2 = createUserMessage({ content: [{ type: 'text', text: 'segundo' }], source: { kind: 'user' as const } })
     const wire = serializeMessages([u1, u2], false)
     expect(wire).toHaveLength(1)
     expect(wire[0].content).toContain('primero')
@@ -394,7 +385,7 @@ describe('boundary sanitizer', () => {
       source: { kind: 'model' as const, provider: 'claude-subscription', model: 'claude-sonnet-5' },
       content: [{ type: 'text' as const, text }],
     })
-    const user = createUserMessage({ content: [{ type: 'text', text: 'hola' }], source: { kind: 'user' as const, user: 'U' } })
+    const user = createUserMessage({ content: [{ type: 'text', text: 'hola' }], source: { kind: 'user' as const } })
     const wire = serializeMessages([user, mk(randomUUID(), 'parte uno'), mk(randomUUID(), 'parte dos')], false)
     const asst = wire.filter(m => m.role === 'assistant')
     expect(asst).toHaveLength(2)
@@ -403,7 +394,7 @@ describe('boundary sanitizer', () => {
   })
 
   test('orphaned tool_use at end of history gets a placeholder result', async () => {
-    const user = createUserMessage({ content: [{ type: 'text', text: 'run ls' }], source: { kind: 'user' as const, user: 'U' } })
+    const user = createUserMessage({ content: [{ type: 'text', text: 'run ls' }], source: { kind: 'user' as const } })
     const assistant = {
       role: 'assistant' as const,
       id: MessageId(randomUUID()),
@@ -432,7 +423,7 @@ describe('boundary sanitizer', () => {
     const asrc = { kind: 'model' as const, provider: 'claude-subscription', model: 'claude-sonnet-5' }
     const mergedUser = createUserMessage({
       content: [{ type: 'text' as const, text: 'file + model notice (merged)' }],
-      source: { kind: 'user' as const, user: 'U' },
+      source: { kind: 'user' as const },
     })
     const assistant = {
       role: 'assistant' as const, id: MessageId(randomUUID()), source: asrc,
@@ -441,14 +432,8 @@ describe('boundary sanitizer', () => {
         { type: 'tool-call' as const, id: ToolCallId('idB'), name: 'bash', arguments: '{}' },
       ],
     }
-    const resultA = createUserMessage({
-      content: [{ type: 'tool-result' as const, toolCallId: ToolCallId('idA'), content: [{ type: 'text' as const, text: 'rA' }] }],
-      source: { kind: 'user' as const, user: 'U' },
-    })
-    const resultB = createUserMessage({
-      content: [{ type: 'tool-result' as const, toolCallId: ToolCallId('idB'), content: [{ type: 'text' as const, text: 'rB' }] }],
-      source: { kind: 'user' as const, user: 'U' },
-    })
+    const resultA = createToolResultMessage({ callId: ToolCallId('idA'), content: [{ type: 'text', text: 'rA' }], isError: false })
+    const resultB = createToolResultMessage({ callId: ToolCallId('idB'), content: [{ type: 'text', text: 'rB' }], isError: false })
     const wire = serializeMessages([mergedUser, assistant, resultA, resultB], true)
     // The assistant is at index 1; the immediate next user (index 2) must contain BOTH results.
     const asstIdx = wire.findIndex(m => m.role === 'assistant')
@@ -461,13 +446,8 @@ describe('boundary sanitizer', () => {
   })
 
   test('leading system messages are stripped from the wire messages', async () => {
-    const system = {
-      role: 'system' as const,
-      id: MessageId(randomUUID()),
-      source: { kind: 'plugin' as const, plugin: 'x', section: 's' },
-      content: [{ type: 'text' as const, text: 'sys text' }],
-    }
-    const user = createUserMessage({ content: [{ type: 'text', text: 'hola' }], source: { kind: 'user' as const, user: 'U' } })
+    const system = createSystemMessage('sys text')
+    const user = createUserMessage({ content: [{ type: 'text', text: 'hola' }], source: { kind: 'user' as const } })
     const wire = serializeMessages([system, user], false)
     expect(wire.some(m => m.role === 'system')).toBe(false)
     expect(wire[0].role).toBe('user')
@@ -495,7 +475,7 @@ describe('image serialization', () => {
         { type: 'image', attachment: imageRef('att_img') },
         { type: 'text', text: 'what is this?' },
       ],
-      source: { kind: 'user' as const, user: 'U' },
+      source: { kind: 'user' as const },
     })
     const body = await serializeRequest({
       provider: 'claude-subscription', model: 'claude-sonnet-5', messages: [user], maxTokens: 1000,
@@ -509,14 +489,13 @@ describe('image serialization', () => {
   })
 
   test('tool-result image is emitted inside the tool_result content array', async () => {
-    const user = createUserMessage({
-      content: [
-        { type: 'tool-result', toolCallId: ToolCallId('call_img'), content: [{ type: 'image', attachment: imageRef('att_tr') }] },
-      ],
-      source: { kind: 'user' as const, user: 'U' },
+    const result = createToolResultMessage({
+      callId: ToolCallId('call_img'),
+      content: [{ type: 'image', attachment: imageRef('att_tr') }],
+      isError: false,
     })
     const body = await serializeRequest({
-      provider: 'claude-subscription', model: 'claude-sonnet-5', messages: [user], maxTokens: 1000,
+      provider: 'claude-subscription', model: 'claude-sonnet-5', messages: [result], maxTokens: 1000,
     }, fakeAttachments())
     const firstUser = body.messages.find(m => m.role === 'user')
     const blocks = firstUser!.content as Array<Record<string, any>>
@@ -531,8 +510,8 @@ describe('image serialization', () => {
     const attachments = {
       readImageRequest: async (_ref: any) => { reads++; return { data: pngBytes, mediaType: 'image/png' } },
     }
-    const user1 = createUserMessage({ content: [{ type: 'image', attachment: imageRef('att_dup') }], source: { kind: 'user' as const, user: 'U' } })
-    const user2 = createUserMessage({ content: [{ type: 'image', attachment: imageRef('att_dup') }], source: { kind: 'user' as const, user: 'U' } })
+    const user1 = createUserMessage({ content: [{ type: 'image', attachment: imageRef('att_dup') }], source: { kind: 'user' as const } })
+    const user2 = createUserMessage({ content: [{ type: 'image', attachment: imageRef('att_dup') }], source: { kind: 'user' as const } })
     await serializeRequest({
       provider: 'claude-subscription', model: 'claude-sonnet-5', messages: [user1, user2], maxTokens: 1000,
     }, attachments)
@@ -540,7 +519,7 @@ describe('image serialization', () => {
   })
 
   test('image present but no attachment service throws UNSUPPORTED_CONTENT', async () => {
-    const user = createUserMessage({ content: [{ type: 'image', attachment: imageRef('att_x') }], source: { kind: 'user' as const, user: 'U' } })
+    const user = createUserMessage({ content: [{ type: 'image', attachment: imageRef('att_x') }], source: { kind: 'user' as const } })
     await expect(serializeRequest({
       provider: 'claude-subscription', model: 'claude-sonnet-5', messages: [user], maxTokens: 1000,
     })).rejects.toThrow(/no attachment service/)
@@ -549,10 +528,28 @@ describe('image serialization', () => {
   test('text-only request performs no attachment reads', async () => {
     let reads = 0
     const attachments = { readImageRequest: async () => { reads++; return { data: pngBytes, mediaType: 'image/png' } } }
-    const user = createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' as const, user: 'U' } })
+    const user = createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' as const } })
     await serializeRequest({
       provider: 'claude-subscription', model: 'claude-sonnet-5', messages: [user], maxTokens: 1000,
     }, attachments)
     expect(reads).toBe(0)
+  })
+})
+
+describe('0.1.7 message model', () => {
+  test('developer tool-update messages are dropped from the wire', () => {
+    const user = createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' as const } })
+    const dev = createDeveloperMessage({
+      content: [{ type: 'tool-addition', toolName: 'Bash' }],
+      source: { kind: 'user' as const },
+    })
+    const wire = serializeMessages([user, dev], false)
+    expect(wire).toEqual([{ role: 'user', content: 'hi' }])
+  })
+
+  test('identity-free request user inputs are accepted', () => {
+    const requestInput = { role: 'user' as const, content: [{ type: 'text' as const, text: 'one-shot' }] }
+    const wire = serializeMessages([requestInput], false)
+    expect(wire).toEqual([{ role: 'user', content: 'one-shot' }])
   })
 })
