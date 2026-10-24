@@ -41,7 +41,7 @@
 
     "@colors/colors": ["@colors/colors@1.5.0", "", {}, "sha512-ooWCrlZP11i8GImSjTHYHLkvFDP48nS4+204nGb1RiX/WXYHmJA2III9/e2DWVabCESdW7hBAEzHRqUn9OUVvQ=="],
 
-    "@deepseek-ai/cordis": ["@deepseek-ai/cordis@4.0.4", "", { "dependencies": { "@deepseek-ai/cosmokit": "~1.8.5", "@standard-schema/spec": "^1.1.0" }, "peerDependencies": { "@deepseek-ai/cordis-plugin-include": "~1.0.9", "@deepseek-ai/cordis-plugin-loader": "~1.0.5" }, "optionalPeers": ["@deepseek-ai/cordis-plugin-include", "@deepseek-ai/cordis-plugin-loader"], "bin": { "cordis": "bin.js" } }, "sha512-obgyxqWAmFn3Re8kvsuUnyW+ihrz6eJCnJO4fh1cQzDtmPYz/zzVeUkH9R94I0OwSVOocK67Kgakm04j/oQXzg=="],
+    "@deepseek-ai/cordis": ["@deepseek-ai/cordis@4.0.5", "", { "dependencies": { "@deepseek-ai/cosmokit": "~1.8.6", "@standard-schema/spec": "^1.1.0" }, "peerDependencies": { "@deepseek-ai/cordis-plugin-include": "~1.0.10", "@deepseek-ai/cordis-plugin-loader": "~1.0.6" }, "optionalPeers": ["@deepseek-ai/cordis-plugin-include", "@deepseek-ai/cordis-plugin-loader"], "bin": { "cordis": "bin.js" } }, "sha512-Sktq5axy0owk9PdnivBRNOJjHEVEibCt0+TDDZcv0+UH2KS1M910fX4kn5y45YFsrpZIi1mJf/1s5VzywMUnyg=="],
 
     "@deepseek-ai/cordis-plugin-group": ["@deepseek-ai/cordis-plugin-group@1.0.4", "", { "peerDependencies": { "@deepseek-ai/cordis": "~4.0.4", "@deepseek-ai/cordis-plugin-loader": "~1.0.5" } }, "sha512-/7tuY5pMQetHava4v6QUeOa4CwZA+mleNvbIoj+iqEmzkYUtlXbLqhzJIcbnDa/Hxgr1jaCwROrI77nuLyeCFg=="],
 
@@ -49,7 +49,7 @@
 
     "@deepseek-ai/cordis-plugin-loader": ["@deepseek-ai/cordis-plugin-loader@1.0.5", "", { "dependencies": { "@deepseek-ai/cosmokit": "~1.8.5", "@deepseek-ai/schemastery": "~3.18.4" }, "peerDependencies": { "@deepseek-ai/cordis": "~4.0.4", "node-addon-require-builtin": "^0.1.6" }, "optionalPeers": ["node-addon-require-builtin"] }, "sha512-200huL2ttWcjyeYllvPYn+qMR7I89qy8MhZasbHltPzB/KMrSfsyoCYKdCGc5KqPGj5iJugcmibQzjINMO9I+Q=="],
 
-    "@deepseek-ai/cosmokit": ["@deepseek-ai/cosmokit@1.8.5", "", {}, "sha512-LXsrlem9z8dq4sLflj2yuCuYX7KqhdzF5hZly3eZyuTo8d6oDSOXuEgC5DbQWKW+lksm6zmOutQLsP/ma6wR6A=="],
+    "@deepseek-ai/cosmokit": ["@deepseek-ai/cosmokit@1.8.6", "", {}, "sha512-ZSD/fN52L498LBIOYwjIOlaLv5veY6ZEwI2yzvZUKQtctn0QAPqu8tKdJ+OF5+Tv6NBq1U+wJWH+QI6OGy5EvQ=="],
 
     "@deepseek-ai/dsh-app-boot": ["@deepseek-ai/dsh-app-boot@0.1.7-rc.2", "", { "dependencies": { "@deepseek-ai/dsh-atomic-write": "0.1.7-rc.2", "@deepseek-ai/dsh-package-manifest": "0.1.7-rc.2", "@eslint-community/regexpp": "^4.12.2", "ajv": "^8.20.0", "js-yaml": "^4.2.0", "node-addon-require-builtin": "^0.1.6", "resolve.exports": "^2.0.3", "semver": "^7.8.5" }, "peerDependencies": { "@deepseek-ai/cordis": "~4.0.4", "@deepseek-ai/cordis-plugin-group": "~1.0.4", "@deepseek-ai/cordis-plugin-include": "~1.0.9", "@deepseek-ai/cordis-plugin-loader": "~1.0.5", "@deepseek-ai/dsh-home-paths": "0.1.7-rc.2", "@deepseek-ai/dsh-launch-environment": "0.1.7-rc.2", "@deepseek-ai/dsh-system-prompt": "0.1.7-rc.2" } }, "sha512-d0QWMMXxT6kICO9QRrXTqJRKP6bWNes7SVGJK6OOEzX6Ua9mzCx1KghPIf7tjW/ZmX0b8n1FoySr4IHElBkrOg=="],
 
@@ -652,6 +652,14 @@
     "zod": ["zod@4.6.5", "", {}, "sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q=="],
 
     "@actions/http-client/undici": ["undici@6.29.0", "", {}, "sha512-R+RODBqp6i2pPflGdq+xIOUkl+RNfGgHwoinecKu/JCuf2uO06cOKoDbI2P7Dn6KcswdKwrczbU6IYJ6K8X+wg=="],
+
+    "@deepseek-ai/cordis-plugin-include/@deepseek-ai/cosmokit": ["@deepseek-ai/cosmokit@1.8.5", "", {}, "sha512-LXsrlem9z8dq4sLflj2yuCuYX7KqhdzF5hZly3eZyuTo8d6oDSOXuEgC5DbQWKW+lksm6zmOutQLsP/ma6wR6A=="],
+
+    "@deepseek-ai/cordis-plugin-loader/@deepseek-ai/cosmokit": ["@deepseek-ai/cosmokit@1.8.5", "", {}, "sha512-LXsrlem9z8dq4sLflj2yuCuYX7KqhdzF5hZly3eZyuTo8d6oDSOXuEgC5DbQWKW+lksm6zmOutQLsP/ma6wR6A=="],
+
+    "@deepseek-ai/dsh-settings/@deepseek-ai/cosmokit": ["@deepseek-ai/cosmokit@1.8.5", "", {}, "sha512-LXsrlem9z8dq4sLflj2yuCuYX7KqhdzF5hZly3eZyuTo8d6oDSOXuEgC5DbQWKW+lksm6zmOutQLsP/ma6wR6A=="],
+
+    "@deepseek-ai/schemastery/@deepseek-ai/cosmokit": ["@deepseek-ai/cosmokit@1.8.5", "", {}, "sha512-LXsrlem9z8dq4sLflj2yuCuYX7KqhdzF5hZly3eZyuTo8d6oDSOXuEgC5DbQWKW+lksm6zmOutQLsP/ma6wR6A=="],
 
     "@octokit/plugin-paginate-rest/@octokit/types": ["@octokit/types@17.0.0", "", { "dependencies": { "@octokit/openapi-types": "^28.0.0" } }, "sha512-ByP1v7YL5SMveFPP7+sj0/ZuWCOOg/Chs4NafOMpq6WNIM/hdGY0S7C0TCGDBWu1aGmOxmUIhMx3cO+IdwYZ1Q=="],
 
