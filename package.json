@@ -37,7 +37,7 @@
     "@semantic-release/release-notes-generator": "14.1.1",
     "@types/node": "^22.20.2",
     "bun-types": "^1.4.2",
-    "semantic-release": "25.0.9",
+    "semantic-release": "26.0.1",
     "typescript": "^7.0.2"
   },
   "peerDependencies": {
